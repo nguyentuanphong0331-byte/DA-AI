@@ -1,23 +1,101 @@
 import pandas as pd
+import json
 
-df = pd.read_csv('web_traffic.csv')
+with open("tf(1).json", "r", encoding="utf-8") as f:
+    data_json = json.load(f)
 
-df['date'] = pd.to_datetime(df['date'])
+df_json = pd.DataFrame(data_json)
 
-# Chuẩn hóa cột nguồn lưu lượng về dạng viết thường và loại bỏ khoảng trắng thừa
-df['traffic_source'] = df['traffic_source'].str.strip().str.lower()
+df_csv = pd.read_csv("web_traffic.csv")
 
-valid_mask = (
-    (df['unique_visitors'] <= df['sessions']) &
-    (df['page_views'] >= df['sessions']) &
-    (df['bounce_rate'].between(0, 1)) &
-    (df['avg_session_duration_sec'] >= 0)
+columns = [
+    "date",
+    "sessions",
+    "unique_visitors",
+    "page_views",
+    "bounce_rate",
+    "avg_session_duration_sec",
+    "traffic_source"
+]
+
+df_json = df_json[columns]
+df_csv = df_csv[columns]
+
+df_json["traffic_source"] = (
+    df_json["traffic_source"]
+    .str.replace(r"\s+Variant\s+\d+$", "", regex=True)
+    .str.strip()
 )
-df_clean = df[valid_mask].copy()
 
-df_clean = df_clean.drop_duplicates(subset=['date', 'traffic_source'], keep='first')
+# Chuyển date về kiểu datetime
+df_json["date"] = pd.to_datetime(
+    df_json["date"],
+    errors="coerce"
+)
 
-df_clean['pages_per_session'] = (df_clean['page_views'] / df_clean['sessions']).round(2)
+df_csv["date"] = pd.to_datetime(
+    df_csv["date"],
+    errors="coerce"
+)
 
-df_clean.to_csv('web_traffic_cleaned.csv', index=False)
-print("Đã làm sạch và lưu file thành công tại web_traffic_cleaned.csv!")
+numeric_columns = [
+    "sessions",
+    "unique_visitors",
+    "page_views",
+    "bounce_rate",
+    "avg_session_duration_sec"
+]
+
+for column in numeric_columns:
+    df_json[column] = pd.to_numeric(
+        df_json[column],
+        errors="coerce"
+    )
+
+    df_csv[column] = pd.to_numeric(
+        df_csv[column],
+        errors="coerce"
+    )
+    
+for column in [
+    "sessions",
+    "unique_visitors",
+    "page_views",
+    "bounce_rate",
+    "avg_session_duration_sec"
+]:
+    df_json.loc[df_json[column] < 0, column] = None
+    df_csv.loc[df_csv[column] < 0, column] = None
+
+
+df_json = df_json.dropna(subset=["date"])
+df_csv = df_csv.dropna(subset=["date"])
+
+df = pd.concat(
+    [df_csv, df_json],
+    ignore_index=True
+)
+
+df = df.drop_duplicates()
+
+df = df.dropna()
+
+df = df.sort_values("date")
+
+df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+
+df.to_csv(
+    "web_traffic_cleaned_merged.csv",
+    index=False,
+    encoding="utf-8-sig"
+)
+
+print("Đã làm sạch và gộp dữ liệu!")
+print("Số dòng:", len(df))
+print("Số cột:", len(df.columns))
+
+print("\n5 dòng đầu:")
+print(df.head())
+
+print("\nThông tin dữ liệu:")
+print(df.info())
