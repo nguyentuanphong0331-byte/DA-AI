@@ -1,101 +1,68 @@
 import pandas as pd
-import json
 
-with open("tf(1).json", "r", encoding="utf-8") as f:
-    data_json = json.load(f)
+INPUT = "web_traffic(1).csv"
+OUTPUT = "web_traffic_cleaned.csv"
 
-df_json = pd.DataFrame(data_json)
+df = pd.read_csv(INPUT)
 
-df_csv = pd.read_csv("web_traffic.csv")
+# 1. Chuẩn hóa tên cột
+df.columns = (
+    df.columns.str.strip()
+    .str.lower()
+    .str.replace(r"[^\w]+", "_", regex=True)
+    .str.strip("_")
+)
 
-columns = [
-    "date",
-    "sessions",
-    "unique_visitors",
-    "page_views",
-    "bounce_rate",
-    "avg_session_duration_sec",
-    "traffic_source"
+# 2. Chuẩn hóa kiểu dữ liệu
+df["date"] = pd.to_datetime(df["date"], errors="coerce")
+
+numeric_cols = [
+    "sessions", "unique_visitors", "page_views",
+    "bounce_rate", "avg_session_duration_sec"
 ]
 
-df_json = df_json[columns]
-df_csv = df_csv[columns]
+for col in numeric_cols:
+    df[col] = pd.to_numeric(df[col], errors="coerce")
 
-df_json["traffic_source"] = (
-    df_json["traffic_source"]
-    .str.replace(r"\s+Variant\s+\d+$", "", regex=True)
-    .str.strip()
+df["traffic_source"] = (
+    df["traffic_source"].astype("string")
+    .str.strip().str.lower()
 )
 
-# Chuyển date về kiểu datetime
-df_json["date"] = pd.to_datetime(
-    df_json["date"],
-    errors="coerce"
+# 3. Missing values
+df = df.dropna(subset=["date", "traffic_source"])
+
+for col in numeric_cols:
+    if df[col].isna().any():
+        df[col] = df[col].fillna(df[col].median())
+
+# 4. Giá trị không hợp lệ
+for col in ["sessions", "unique_visitors", "page_views",
+            "avg_session_duration_sec"]:
+    df = df[df[col] > 0]
+
+df = df[(df["bounce_rate"] >= 0) & (df["bounce_rate"] <= 1)]
+
+# 5. Ràng buộc logic
+df = df[df["unique_visitors"] <= df["sessions"]]
+df = df[df["page_views"] >= df["sessions"]]
+
+# 6. Trùng lặp
+df = df.drop_duplicates(
+    subset=["date", "traffic_source"],
+    keep="first"
 )
 
-df_csv["date"] = pd.to_datetime(
-    df_csv["date"],
-    errors="coerce"
-)
-
-numeric_columns = [
-    "sessions",
-    "unique_visitors",
-    "page_views",
-    "bounce_rate",
-    "avg_session_duration_sec"
-]
-
-for column in numeric_columns:
-    df_json[column] = pd.to_numeric(
-        df_json[column],
-        errors="coerce"
-    )
-
-    df_csv[column] = pd.to_numeric(
-        df_csv[column],
-        errors="coerce"
-    )
-    
-for column in [
-    "sessions",
-    "unique_visitors",
-    "page_views",
-    "bounce_rate",
-    "avg_session_duration_sec"
-]:
-    df_json.loc[df_json[column] < 0, column] = None
-    df_csv.loc[df_csv[column] < 0, column] = None
-
-
-df_json = df_json.dropna(subset=["date"])
-df_csv = df_csv.dropna(subset=["date"])
-
-df = pd.concat(
-    [df_csv, df_json],
-    ignore_index=True
-)
-
-df = df.drop_duplicates()
-
-df = df.dropna()
-
-df = df.sort_values("date")
-
+# 7. Chuẩn hóa format
 df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+df["traffic_source"] = df["traffic_source"].astype(str)
 
-df.to_csv(
-    "web_traffic_cleaned_merged.csv",
-    index=False,
-    encoding="utf-8-sig"
-)
+df = df.sort_values(
+    ["date", "traffic_source"]
+).reset_index(drop=True)
 
-print("Đã làm sạch và gộp dữ liệu!")
-print("Số dòng:", len(df))
-print("Số cột:", len(df.columns))
+df.to_csv(OUTPUT, index=False, encoding="utf-8-sig")
 
-print("\n5 dòng đầu:")
-print(df.head())
-
-print("\nThông tin dữ liệu:")
-print(df.info())
+print("Đã làm sạch dữ liệu.")
+print("Kích thước:", df.shape)
+print("File:", OUTPUT)
